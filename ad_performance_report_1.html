@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>紅門_ 每日廣告監控儀表板</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Microsoft JhengHei', sans-serif; background: #f5f7fa; color: #333; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header h1 { font-size: 2em; margin-bottom: 5px; }
+        .header .date { font-size: 1.1em; opacity: 0.9; }
+        .alert-banner { background: #f39c12; color: white; padding: 10px; text-align: center; font-weight: bold; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px; }
+        .kpi-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; position: relative; overflow: hidden; }
+        .kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--accent-color); }
+        .kpi-value { font-size: 1.8em; font-weight: bold; margin-bottom: 5px; color: var(--accent-color); }
+        .kpi-label { color: #666; font-size: 0.9em; margin-bottom: 5px; }
+        .kpi-change { display: inline-block; font-size: 0.8em; padding: 3px 8px; border-radius: 15px; font-weight: bold; margin-top: 5px; }
+        .trend-up { background: #d4edda; color: #155724; }
+        .trend-down { background: #f8d7da; color: #721c24; }
+        .trend-stable { background: #e2e3e5; color: #383d41; }
+        .primary { --accent-color: #3498db; } .success { --accent-color: #27ae60; } .warning { --accent-color: #f39c12; } .danger { --accent-color: #e74c3c; } .info { --accent-color: #17a2b8; }
+        .charts-section { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 30px; }
+        .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .chart-title { font-size: 1.3em; font-weight: 600; margin-bottom: 15px; color: #2c3e50; display: flex; align-items: center; gap: 10px; }
+        .chart-wrapper { position: relative; height: 300px; }
+        .alert-section { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .alert-item { display: flex; align-items: center; padding: 10px; margin-bottom: 10px; border-left: 4px solid; border-radius: 4px; }
+        .alert-critical { background: #f8d7da; border-color: #dc3545; color: #721c24; }
+        .alert-warning { background: #fff3cd; border-color: #ffc107; color: #856404; }
+        .alert-success { background: #d1e7dd; border-color: #198754; color: #0f5132; }
+        .insights-card { background: white; padding: 20px 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .insights-card h2 { font-size: 1.3em; font-weight: 600; margin-bottom: 15px; color: #2c3e50; display: flex; align-items: center; gap: 10px; }
+        .insights-card ul, .insights-card ol { padding-left: 20px; }
+        .insights-card li { margin-bottom: 12px; line-height: 1.7; }
+        .campaign-performance { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .campaign-table { width: 100%; border-collapse: collapse; }
+        .campaign-table th, .campaign-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #f1f3f4; }
+        .campaign-table th { background: #f8f9fa; font-weight: 600; color: #495057; font-size: 0.9em; }
+        .campaign-table tbody tr:hover { background: #f8f9fa; }
+        .comparison-cell { font-size: 0.8em; opacity: 0.8; }
+        @media (max-width: 992px) { .charts-section { grid-template-columns: 1fr; } }
+        @media (max-width: 768px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+    </style>
+</head>
+<body>
+    <div id="alert-banner-container"></div>
+    <div class="header">
+        <h1>📊 紅門_ 每日廣告監控</h1>
+        <div class="date" id="report-date"></div>
+    </div>
+    
+    <div class="container">
+        <div style="background: #e8f5e8; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #27ae60;">
+            <strong>📊 數據來源：</strong> 本報表使用Meta MCP工具直接從Facebook Graph API獲取的廣告數據
+            <br><strong id="data-range-info">📅 數據範圍：</strong>
+        </div>
+        
+        <div id="kpi-grid-container" class="kpi-grid"></div>
+        
+        <div class="charts-section">
+            <div class="chart-card">
+                <div class="chart-title">📈 近7日趨勢追蹤</div>
+                <div class="chart-wrapper"><canvas id="trendChart"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <div class="chart-title">🎯 今日各活動花費分布</div>
+                <div class="chart-wrapper"><canvas id="spendDistributionChart"></canvas></div>
+            </div>
+        </div>
+        
+        <div id="alert-section-container" class="alert-section"></div>
+        
+        <!-- Insights and Recommendations -->
+        <div class="insights-card">
+            <h2>🚀 關鍵洞見</h2>
+            <ul id="insights-list">
+                <!-- Insights will be dynamically inserted here -->
+            </ul>
+        </div>
+        <div class="insights-card">
+            <h2>💡 建議採取的行動</h2>
+            <ol id="recommendations-list">
+                <!-- Recommendations will be dynamically inserted here -->
+            </ol>
+        </div>
+
+        <div class="campaign-performance">
+            <div class="chart-title" style="padding: 15px 20px; border-bottom: 1px solid #dee2e6;">📋 活動即時狀態</div>
+            <div style="overflow-x: auto;">
+                <table class="campaign-table">
+                    <thead>
+                        <tr>
+                            <th>活動名稱</th>
+                            <th>今日花費 (TWD)</th>
+                            <th>今日購買數</th>
+                            <th>今日CPA (TWD)</th>
+                            <th>今日CTR (%)</th>
+                            <th>今日CPC (TWD)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="campaign-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    const reportDate = "2025-09-22";
+    const data = {
+        "2025-09-22": {
+            "summary": { "spend": 2810, "impressions": 29121, "clicks": 1014, "purchases": 176 },
+            "campaigns": [
+                { "name": "轉換｜新舊客｜常態｜彌月", "spend": 204, "impressions": 2342, "clicks": 93, "purchases": 6 },
+                { "name": "轉換｜新舊客｜Q餅", "spend": 580, "impressions": 5986, "clicks": 220, "purchases": 20 },
+                { "name": "轉換｜新舊客｜中秋節", "spend": 1576, "impressions": 16357, "clicks": 582, "purchases": 108 },
+                { "name": "轉換｜網紅開團｜中秋節", "spend": 450, "impressions": 4436, "clicks": 119, "purchases": 38 }
+            ]
+        },
+        "2025-09-21": {
+            "summary": { "spend": 2648, "impressions": 26246, "clicks": 1030, "purchases": 155 },
+            "campaigns": [
+                { "name": "轉換｜新舊客｜常態｜彌月", "spend": 202, "impressions": 2654, "clicks": 120, "purchases": 5 },
+                { "name": "轉換｜新舊客｜Q餅", "spend": 540, "impressions": 5641, "clicks": 224, "purchases": 26 },
+                { "name": "轉換｜新舊客｜中秋節", "spend": 1504, "impressions": 14260, "clicks": 606, "purchases": 110 },
+                { "name": "轉換｜網紅開團｜中秋節", "spend": 402, "impressions": 3691, "clicks": 80, "purchases": 15 }
+            ]
+        },
+        "2025-09-15": {
+            "summary": { "spend": 15078, "impressions": 122228, "clicks": 4360, "purchases": 404 },
+            "campaigns": [
+                { "name": "轉換｜新舊客｜常態｜彌月", "spend": 192, "impressions": 1880, "clicks": 83, "purchases": 4 },
+                { "name": "轉換｜新舊客｜Q餅", "spend": 530, "impressions": 5013, "clicks": 143, "purchases": 0 },
+                { "name": "轉換｜新舊客｜中秋節", "spend": 12610, "impressions": 97124, "clicks": 2765, "purchases": 353 },
+                { "name": "轉換｜新舊客｜港澳中秋節", "spend": 350, "impressions": 2341, "clicks": 101, "purchases": 1 },
+                { "name": "轉換｜網紅開團｜中秋節", "spend": 996, "impressions": 8908, "clicks": 646, "purchases": 47 }
+            ]
+        },
+        "trendData": [
+            { "date": "2025-09-16", "spend": 15681, "cpa": 32.3 },
+            { "date": "2025-09-17", "spend": 5736, "cpa": 27.8 },
+            { "date": "2025-09-18", "spend": 3584, "cpa": 21.3 },
+            { "date": "2025-09-19", "spend": 3381, "cpa": 21.1 },
+            { "date": "2025-09-20", "spend": 2462, "cpa": 20.3 },
+            { "date": "2025-09-21", "spend": 2648, "cpa": 17.1 },
+            { "date": "2025-09-22", "spend": 2810, "cpa": 16.0 }
+        ]
+    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // --- UTILITY FUNCTIONS ---
+        const formatCurrency = (value) => `TWD $${Math.round(value).toLocaleString()}`;
+        const formatNumber = (value) => Math.round(value).toLocaleString();
+        const formatPercent = (value) => `${(value * 100).toFixed(2)}%`;
+        const calculateChange = (current, previous) => previous ? (current - previous) / previous : Infinity;
+        const getCPA = (spend, purchases) => purchases > 0 ? spend / purchases : 0;
+        const getCTR = (clicks, impressions) => impressions > 0 ? clicks / impressions : 0;
+        const getCPC = (spend, clicks) => clicks > 0 ? spend / clicks : 0;
+
+        function getChangeHtml(change, isCost = false) {
+            if (change === Infinity || !isFinite(change)) return `<div class="kpi-change trend-stable">N/A</div>`;
+            
+            let isUp = change > 0;
+            // For cost metrics like CPA, an increase is bad (down), a decrease is good (up).
+            if (isCost) isUp = change < 0;
+
+            const trendClass = isUp ? 'trend-up' : 'trend-down';
+            const sign = change > 0 ? '▲' : '▼';
+            return `<div class="kpi-change ${trendClass}">${sign} ${Math.abs(change * 100).toFixed(1)}%</div>`;
+        }
+
+        // --- DATA PROCESSING ---
+        const today = data[reportDate].summary;
+        const yesterday = data["2025-09-21"].summary;
+        const lastWeek = data["2025-09-15"].summary;
+
+        today.cpa = getCPA(today.spend, today.purchases);
+        yesterday.cpa = getCPA(yesterday.spend, yesterday.purchases);
+        lastWeek.cpa = getCPA(lastWeek.spend, lastWeek.purchases);
+        today.ctr = getCTR(today.clicks, today.impressions);
+        yesterday.ctr = getCTR(yesterday.clicks, yesterday.impressions);
+        lastWeek.ctr = getCTR(lastWeek.clicks, lastWeek.impressions);
+        today.cpc = getCPC(today.spend, today.clicks);
+        yesterday.cpc = getCPC(yesterday.spend, yesterday.clicks);
+        lastWeek.cpc = getCPC(lastWeek.cpc, lastWeek.clicks);
+
+        const kpis = [
+            { id: 'spend', label: '今日花費', value: formatCurrency(today.spend), color: 'primary', dod: calculateChange(today.spend, yesterday.spend), wow: calculateChange(today.spend, lastWeek.spend) },
+            { id: 'purchases', label: '今日購買數', value: formatNumber(today.purchases), color: 'success', dod: calculateChange(today.purchases, yesterday.purchases), wow: calculateChange(today.purchases, lastWeek.purchases) },
+            { id: 'cpa', label: '今日CPA', value: formatCurrency(today.cpa), color: 'danger', dod: calculateChange(today.cpa, yesterday.cpa), wow: calculateChange(today.cpa, lastWeek.cpa), isCost: true },
+            { id: 'ctr', label: '今日CTR', value: formatPercent(today.ctr), color: 'warning', dod: calculateChange(today.ctr, yesterday.ctr), wow: calculateChange(today.ctr, lastWeek.ctr) },
+            { id: 'clicks', label: '今日點擊', value: formatNumber(today.clicks), color: 'info', dod: calculateChange(today.clicks, yesterday.clicks), wow: calculateChange(today.clicks, lastWeek.clicks) },
+        ];
+        
+        // --- RENDER FUNCTIONS ---
+        function renderHeader() {
+            document.getElementById('report-date').innerText = `${reportDate} | 數據更新時間：即時 (Meta API)`;
+            document.getElementById('data-range-info').innerHTML += `${reportDate} 當日數據 vs 2025-09-21 對比 | vs 2025-09-15 對比`;
+        }
+
+        function renderKpis() {
+            const container = document.getElementById('kpi-grid-container');
+            container.innerHTML = kpis.map(kpi => `
+                <div class="kpi-card ${kpi.color}">
+                    <div class="kpi-value">${kpi.value}</div>
+                    <div class="kpi-label">${kpi.label}</div>
+                    ${getChangeHtml(kpi.dod, kpi.isCost)} vs 昨日
+                    ${getChangeHtml(kpi.wow, kpi.isCost)} vs 上週同日
+                </div>
+            `).join('');
+        }
+
+        function renderAlerts() {
+            const alerts = [];
+            const cpaChangeDoD = calculateChange(today.cpa, yesterday.cpa);
+            if (cpaChangeDoD > 0.2) alerts.push({ type: 'critical', text: `<strong>緊急：</strong>整體CPA較昨日上升 ${(cpaChangeDoD*100).toFixed(1)}%，需立即檢視。` });
+            else if (cpaChangeDoD < -0.2) alerts.push({ type: 'success', text: `<strong>良好：</strong>整體CPA較昨日下降 ${Math.abs(cpaChangeDoD*100).toFixed(1)}%，成本效益提升。` });
+
+            const ctrChangeDoD = calculateChange(today.ctr, yesterday.ctr);
+             if (ctrChangeDoD < -0.1) alerts.push({ type: 'warning', text: `<strong>注意：</strong>整體CTR較昨日下降 ${Math.abs(ctrChangeDoD*100).toFixed(1)}%，素材吸引力可能降低。` });
+
+            const topCampaign = data[reportDate].campaigns.reduce((prev, current) => (prev.spend > current.spend) ? prev : current);
+            alerts.push({ type: 'warning', text: `<strong>觀察：</strong>「${topCampaign.name}」是今日最主要的消費活動，佔總預算的 ${(topCampaign.spend/today.spend*100).toFixed(1)}%。` });
+            
+            const bannerAlert = alerts.find(a => a.type === 'critical' || a.type === 'warning');
+            if(bannerAlert) {
+                document.getElementById('alert-banner-container').innerHTML = `<div class="alert-banner">🚨 ${bannerAlert.text.replace(/<strong>.*?<\/strong>/g, '')}</div>`;
+            }
+
+            const container = document.getElementById('alert-section-container');
+            container.innerHTML = `<div class="chart-title">🚨 即時預警</div>` + alerts.map(alert => `
+                <div class="alert-item alert-${alert.type}">${alert.text}</div>
+            `).join('');
+
+            // New Insights & Recommendations
+            const insightsList = document.getElementById('insights-list');
+            const recommendationsList = document.getElementById('recommendations-list');
+
+            const insights = [
+                `<strong>🚀 成本效益持續優化，成效穩定增長</strong>：與昨日相比，今日花費微增 6.1%，但成功帶來了 13.5% 的購買數增長，使得<strong>單次購買成本 (CPA) 進一步下降 6.4%</strong>，達到 TWD $16.0 的新低點。這顯示帳戶的投放效率正持續提升。`,
+                `<strong>📈 「網紅開團」活動表現亮眼</strong>：<code>轉換｜網紅開團｜中秋節</code> 是今日成效提升的最大功臣。其購買數較昨日<strong>暴增 153%</strong>，而 CPA 更是<strong>大幅降低了 56%</strong>，從 $26.8 降至 $11.8，成效卓越。`,
+                `<strong>⚠️ 「Q餅」活動成本出現警訊</strong>：<code>轉換｜新舊客｜Q餅</code> 活動的 CPA <strong>較昨日上漲了近 40%</strong>，從 $20.8 升至 $29.0。雖然仍在可接受範圍，但成本上揚的趨勢需要密切關注。`,
+                `<strong>📉 整體策略轉型成功</strong>：與上週同日相比，總花費大幅減少了 81.4%，但 CPA 也成功<strong>降低了 57.1%</strong>。這再次驗證了先前「關閉舊活動、啟用新主題廣告」的策略調整是極為成功的，實現了用更少預算維持高效轉換的目標。`
+            ];
+
+            const recommendations = [
+                `<strong>放大成功經驗</strong>：立即深入分析 <code>轉換｜網紅開團｜中秋節</code> 活動，找出是哪個廣告組合 (Ad Set) 或廣告素材 (Ad Creative) 帶來了如此巨大的成效躍升。<strong>考慮逐步為該活動或其下的成功組合增加預算</strong>，以擴大戰果。`,
+                `<strong>優化成本上揚的活動</strong>：針對 CPA 明顯上漲的 <code>轉換｜新舊客｜Q餅</code> 活動，建議<strong>檢查其內部的廣告組合和素材成效</strong>。是否有點擊率 (CTR) 下降或頻率 (Frequency) 過高的情況？可以考慮暫停其中表現不佳的廣告，或更新廣告素材。`,
+                `<strong>維持主力活動的穩定</strong>：<code>轉換｜新舊客｜中秋節</code> 是目前最主要的消費主力，成效穩定。建議<strong>維持目前的預算和設定</strong>，並持續監控其 CPA 是否穩定在 $15 以下的優秀水平。`,
+                `<strong>規劃後續檔期素材</strong>：中秋節檔期即將結束，應基於這次「晚鳥」主題廣告的成功經驗，<strong>提前規劃下一檔期（例如：雙十節、雙十一）的廣告素材與優惠活動</strong>，以複製此次成功的模式。`
+            ];
+
+            insightsList.innerHTML = insights.map(item => `<li>${item}</li>`).join('');
+            recommendationsList.innerHTML = recommendations.map(item => `<li>${item}</li>`).join('');
+        }
+        
+        function renderCampaignTable() {
+            const container = document.getElementById('campaign-table-body');
+            container.innerHTML = data[reportDate].campaigns.map(c => {
+                const yesterdayCampaign = data['2025-09-21'].campaigns.find(yc => yc.name === c.name) || {};
+                const lastWeekCampaign = data['2025-09-15'].campaigns.find(lwc => lwc.name === c.name) || {};
+
+                const cpa = getCPA(c.spend, c.purchases);
+                const ctr = getCTR(c.clicks, c.impressions);
+                const cpc = getCPC(c.spend, c.clicks);
+                
+                const yesterdayCPA = getCPA(yesterdayCampaign.spend, yesterdayCampaign.purchases);
+                const lastWeekCPA = getCPA(lastWeekCampaign.spend, lastWeekCampaign.purchases);
+                
+                return `
+                    <tr>
+                        <td>${c.name}</td>
+                        <td>
+                            ${formatCurrency(c.spend)}
+                            <div class="comparison-cell">昨日: ${formatCurrency(yesterdayCampaign.spend || 0)} | 上週: ${formatCurrency(lastWeekCampaign.spend || 0)}</div>
+                        </td>
+                        <td>
+                            ${formatNumber(c.purchases)}
+                            <div class="comparison-cell">昨日: ${formatNumber(yesterdayCampaign.purchases || 0)} | 上週: ${formatNumber(lastWeekCampaign.purchases || 0)}</div>
+                        </td>
+                         <td>
+                            ${formatCurrency(cpa)}
+                            <div class="comparison-cell">昨日: ${formatCurrency(yesterdayCPA)} | 上週: ${formatCurrency(lastWeekCPA)}</div>
+                        </td>
+                        <td>${formatPercent(ctr)}</td>
+                        <td>${formatCurrency(cpc)}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderCharts() {
+            // Trend Chart
+            new Chart(document.getElementById('trendChart').getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: data.trendData.map(d => d.date),
+                    datasets: [
+                        { label: '花費 (TWD)', data: data.trendData.map(d => d.spend), borderColor: '#3498db', yAxisID: 'y' },
+                        { label: 'CPA (TWD)', data: data.trendData.map(d => d.cpa), borderColor: '#e74c3c', yAxisID: 'y1' }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { y: { position: 'left', title: { display: true, text: '花費 (TWD)' } }, y1: { position: 'right', title: { display: true, text: 'CPA (TWD)' }, grid: { drawOnChartArea: false } } } }
+            });
+
+            // Spend Distribution
+            new Chart(document.getElementById('spendDistributionChart').getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels: data[reportDate].campaigns.map(c => c.name),
+                    datasets: [{
+                        data: data[reportDate].campaigns.map(c => c.spend),
+                        backgroundColor: ['#3498db', '#27ae60', '#f39c12', '#e74c3c', '#8e44ad'],
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+            });
+        }
+
+        // --- INITIALIZE DASHBOARD ---
+        renderHeader();
+        renderKpis();
+        renderAlerts();
+        renderCampaignTable();
+        renderCharts();
+    });
+    </script>
+</body>
+</html>
